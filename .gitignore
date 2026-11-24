@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# generated artefacts
+reports/
+corpus/
+dfp_model.json
+model*.json
+stego.deflate
+tools/preflate-estimate/target/
+.venv/
