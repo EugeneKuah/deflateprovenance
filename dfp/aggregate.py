@@ -519,6 +519,16 @@ def analyse_archive(
             out_size=e["uncompressed_size"], compressed_size=e["compressed_size"],
         ))
 
+    # Exact proof can replace a model label (for example, zlib-ng becomes
+    # "zlib" when CPython zlib reproduces the same bytes).  Keep the original
+    # family assignment so the structural checks below can distinguish a
+    # zlib-family flush variation from evidence of two writers.
+    initial_labels = {
+        id(e): e.prediction.label
+        for e in entries
+        if e.status == ATTRIBUTED and e.prediction is not None
+    }
+
     strong = getattr(clf, "strong_confidence", None) or DEFAULT_STRONG_CONFIDENCE
     min_evidence = clf.min_evidence_bytes if clf is not None else 0
     proof_min = max(PROOF_MIN_BYTES, min_evidence)
@@ -740,6 +750,18 @@ def analyse_archive(
         if e.method == "deflate" and e.ending and e.n_matches >= ENDING_MIN_MATCHES:
             ends[e.ending].append(e)
 
+    ending_entries = [e for members in ends.values() for e in members]
+    same_zlib_family = (
+        len(ends) >= 2
+        and ending_entries
+        and all(
+            initial_labels.get(id(e)) is not None
+            and _family(initial_labels[id(e)]) == "zlib-api"
+            for e in ending_entries
+        )
+        and any(e.proof for e in ending_entries)
+    )
+
     # 5b. exact proofs by encoders of different families, each proof
     #     unambiguous: no encoder of the other family reproduces it too
     proofs: dict[str, list[EntryAnalysis]] = defaultdict(list)
@@ -776,7 +798,7 @@ def analyse_archive(
         odd = sorted(k for k, c in counts.items() if c < most)
         return odd, not odd
 
-    if len(ends) >= 2:
+    if len(ends) >= 2 and not same_zlib_family:
         odd, tied = odd_text({k: len(v) for k, v in ends.items()})
         how = "; ".join(f"{len(ends[k])} end{'s' if len(ends[k]) == 1 else ''} with "
                         f"{ENDINGS[k]}" for k in sorted(ends, key=lambda k: -len(ends[k])))
